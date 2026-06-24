@@ -20,4 +20,8 @@ services:
       - .:/app
     env_file:
       - .env
+    environment:
+      # Dentro de Docker la API debe alcanzar Mongo por el nombre del servicio
+      # de Compose (basededatos), no por localhost. Pisa el valor del .env.
+      MONGO_HOST: basededatos
     command: uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
