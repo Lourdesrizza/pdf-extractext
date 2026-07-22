@@ -1,27 +1,48 @@
-version: '3.8'
+# docker-compose.yml
+# Orquestación de la API + MongoDB.
+# Compila la imagen del servicio `app` con:
+#   docker build -t pdf-extactext:0.1.0 .
+# Luego levanta el stack con:
+#   docker compose up -d
 
 services:
+  # ---------------------------------------------------------------------------
+  # MongoDB — base de datos de documentos.
+  # ---------------------------------------------------------------------------
   basededatos:
-    image: mongo:latest
+    image: mongo:7
     container_name: mi_mongo_local
+    restart: unless-stopped
     ports:
       - "27017:27017"
     volumes:
       - ./mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
+  # ---------------------------------------------------------------------------
+  # API FastAPI — usa la imagen ya versionada (Issue #10 / #20).
+  # En producción NO se hace build aquí: se confía en la imagen con tag.
+  # ---------------------------------------------------------------------------
   app:
-    build: .
+    image: pdf-extactext:0.1.0
     container_name: pdf_extractor_app
+    restart: unless-stopped
     depends_on:
-      - basededatos
+      basededatos:
+        condition: service_healthy
     ports:
       - "8000:8000"
-    volumes:
-      - .:/app
     env_file:
       - .env
     environment:
-      # Dentro de Docker la API debe alcanzar Mongo por el nombre del servicio
+      # Dentro de Docker la API alcanza Mongo por el nombre del servicio
       # de Compose (basededatos), no por localhost. Pisa el valor del .env.
       MONGO_HOST: basededatos
-    command: uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
+      MONGO_PORT: "27017"
+    # Issue #21 — No definimos `command:`: el CMD del Dockerfile ya apunta
+    # correctamente a app.main:app, evitando duplicación y posibles errores
+    # de módulo.

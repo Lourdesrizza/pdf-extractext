@@ -1,4 +1,46 @@
+# --- Control de versiones ---
+.git
+.gitignore
+
+# --- Entornos virtuales y caché de Python ---
 .venv
 .venv/
 __pycache__/
+**/__pycache__/
 *.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.python-version
+
+# --- Secretos / variables de entorno ---
+.env
+.env.*
+!.env.example
+
+# --- Datos locales de MongoDB ---
+./mongo-data
+mongo-data/
+
+# --- Tests (no se necesitan dentro de la imagen de producción) ---
+tests/
+conftest.py
+
+# --- Documentación y metadatos ---
+docs/
+LICENSE
+README.md
+DOCS_DOCKER.md
+
+# --- Herramientas / agentes ---
+.agents/
+skills-lock.json
+
+# --- Artefactos de build y temporales ---
+*.tar
+*.log
+resultado.txt
+pdfs/
+Dockerfile
+docker-compose.yml
+.dockerignore

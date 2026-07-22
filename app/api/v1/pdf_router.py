@@ -1,3 +1,4 @@
+import io
 import logging
 from typing import List
 
@@ -47,6 +48,9 @@ def _to_response(document: DomainDocument) -> DocumentResponse:
 async def upload_pdf(file: UploadFile = File(...)):
     """Endpoint para subir y procesar un archivo PDF.
 
+    Procesa el archivo completamente en memoria con ``io.BytesIO``;
+    no persiste archivos temporales en disco (Issue #23).
+
     Args:
         file: Archivo PDF recibido como UploadFile.
 
@@ -57,13 +61,15 @@ async def upload_pdf(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="El archivo debe ser un PDF")
 
     content = await file.read()
+    buffer = io.BytesIO(content)
+
     try:
-        PDFService.validate_pdf_content(content)
+        PDFService.validate_pdf_content(buffer.getvalue())
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error))
 
-    checksum = PDFService.get_checksum(content)
-    text = PDFService.extract_text(content)
+    checksum = PDFService.get_checksum(buffer.getvalue())
+    text = PDFService.extract_text(buffer.getvalue())
 
     if not text:
         raise HTTPException(

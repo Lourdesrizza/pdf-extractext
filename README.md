@@ -108,7 +108,8 @@ Cliente envía POST /api/v1/upload
 
 | Método | Ruta | Descripción |
 |---|---|---|
-| `POST` | `/api/v1/upload` | Sube y procesa un PDF |
+| `GET` | `/health` | Health check de la API + MongoDB (Issue #24) |
+| `POST` | `/api/v1/upload` | Sube y procesa un PDF (en memoria, Issue #23) |
 | `GET` | `/api/v1/documents` | Lista todos los documentos |
 | `GET` | `/api/v1/documents/{id}` | Busca documento por ID |
 | `GET` | `/api/v1/documents/checksum/{hash}` | Busca por checksum SHA-256 |
@@ -117,11 +118,43 @@ Cliente envía POST /api/v1/upload
 | `POST` | `/api/v1/users/` | Crea un usuario |
 | `GET` | `/api/v1/users/{id}` | Obtiene usuario por ID |
 
+### Health check (`/health`)
+
+El endpoint `GET /health` ejecuta un `ping` contra MongoDB y responde:
+
+```json
+// 200 OK
+{ "status": "ok", "db": "connected" }
+
+// 503 Service Unavailable
+{ "status": "degraded", "db": "disconnected" }
+```
+
+Es usado por el `HEALTHCHECK` del Dockerfile y por el `healthcheck` del servicio
+`basededatos` en `docker-compose.yml` para orquestar reinicios automáticos.
+
 La documentación interactiva (Swagger UI) está disponible en:
 
 ```
 http://127.0.0.1:8000/docs
 ```
+
+### Manejo de errores — RFC 9457 (Issue #16)
+
+Todos los errores HTTP responden con `Content-Type: application/problem+json`
+y el formato definido por **RFC 9457**:
+
+```json
+{
+  "type": "https://pdf-extactext.local/errors/http-404",
+  "title": "Not Found",
+  "status": 404,
+  "detail": "Documento con ID 'abc' no encontrado",
+  "instance": "http://127.0.0.1:8000/api/v1/documents/abc"
+}
+```
+
+Campos obligatorios: `type`, `title`, `status`, `detail`.
 
 ---
 
@@ -166,17 +199,27 @@ uv sync --all-extras
 cp .env.example .env
 ```
 
-Editar `.env` con los valores correspondientes:
+#### Variables de entorno
 
-```env
-API_V1_STR=/api/v1
-DEBUG=True
-DATABASE_URL=mongodb://localhost:27017
-DB_NAME=pdf_extractor_db
-SECRET_KEY=cambiar_esta_clave_en_cada_entorno
-```
+| Variable | Descripción | Valor por defecto |
+|---|---|---|
+| `MONGO_HOST` | Host de MongoDB (fuera de Docker usar `localhost`; en Compose se pisa a `basededatos`) | `localhost` |
+| `MONGO_PORT` | Puerto de MongoDB | `27017` |
+| `DB_NAME` | Nombre de la base de datos | `pdf_extractor_db` |
+| `DATABASE_URL` | URI completa opcional (tiene prioridad sobre host/port). Útil para Atlas | *vacío* |
+| `API_V1_STR` | Prefijo de la API | `/api/v1` |
+| `DEBUG` | Modo debug (`True` / `False`) | `True` |
+| `SECRET_KEY` | Clave usada por la app (en producción usar un valor aleatorio largo) | *requerido* |
 
-### Paso 5 — Levantar MongoDB con Docker
+> ⚠️ El archivo `.env` está excluido del contenedor mediante `.dockerignore`
+> (Issue #28) para evitar filtrar secretos en la imagen. En `docker-compose.yml`
+> se inyecta mediante `env_file:` en runtime, lo que es la práctica segura.
+
+### Paso 5 — Levantar el proyecto con Docker (recomendado)
+
+Hay dos modos de uso:
+
+#### A) Solo MongoDB en Docker + API local
 
 ```bash
 docker run -d -p 27017:27017 --name mongo mongo:7
@@ -185,8 +228,44 @@ docker run -d -p 27017:27017 --name mongo mongo:7
 O usando el `docker-compose.yml` incluido:
 
 ```bash
-docker-compose up -d basededatos
+docker compose up -d basededatos
 ```
+
+Y luego levantar la API en el entorno local:
+
+```bash
+uv run uvicorn app.main:app --reload
+```
+
+#### B) Stack completo (API + MongoDB) con Compose
+
+El `docker-compose.yml` **no** construye la imagen en producción: usa `image:`
+con un tag de versión (Issue #10). Esto fuerza un flujo reproducible.
+
+```bash
+# 1. Construir y taggear la imagen (una sola vez, o cuando cambie el código)
+docker build -t pdf-extactext:0.1.0 .
+
+# 2. Levantar el stack completo en segundo plano
+docker compose up -d
+
+# 3. Ver logs
+docker compose logs -f app
+
+# 4. Verificar salud
+curl http://localhost:8000/health
+
+# 5. Detener
+docker compose down
+```
+
+> El `Dockerfile` corre la API como **usuario no-root** (`appuser`),
+> parchea los paquetes del SO con `apt-get upgrade` y aplica un
+> `HEALTHCHECK` contra `/health` para que Docker pueda reiniciar el
+> contenedor si deja de respondar (Issues #25, #20, #24).
+
+Para más detalles sobre `docker save` / `docker load` (distribución de la
+imagen sin registry), consultá [`DOCS_DOCKER.md`](DOCS_DOCKER.md) (Issue #12).
 
 ### Paso 6 — Levantar el servidor
 
