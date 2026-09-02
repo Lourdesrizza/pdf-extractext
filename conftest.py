@@ -1,4 +1,14 @@
 # conftest.py  (raíz del proyecto)
+import os
+
+# La configuración se instancia al importar ``app.main``. Definimos valores
+# exclusivos para testing antes de ese import para que la suite no dependa de
+# un archivo .env local ni de secretos del desarrollador.
+os.environ.setdefault("API_V1_STR", "/api/v1")
+os.environ.setdefault("DEBUG", "false")
+os.environ.setdefault("DB_NAME", "pdf_extractor_test")
+os.environ.setdefault("SECRET_KEY", "test-secret-not-for-production")
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 from fastapi.testclient import TestClient

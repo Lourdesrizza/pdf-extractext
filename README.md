@@ -297,6 +297,8 @@ uv run pytest -v
 ```
 
 > ⚠️ Los tests en `tests/data/test_mongo_real.py` requieren que MongoDB esté corriendo en `localhost:27017`.
+> Por eso se omiten por defecto. Para ejecutarlos intencionalmente en PowerShell:
+> ` $env:RUN_MONGO_TESTS="1"; uv run pytest tests/data/test_mongo_real.py `.
 
 ---
 

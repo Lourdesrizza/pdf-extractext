@@ -1,6 +1,17 @@
+import os
+
 import pytest
 import pytest_asyncio
 from motor.motor_asyncio import AsyncIOMotorClient
+
+
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.skipif(
+        os.getenv("RUN_MONGO_TESTS") != "1",
+        reason="Requiere MongoDB real. Ejecutar con RUN_MONGO_TESTS=1.",
+    ),
+]
 
 # Tu código corre en la compu y se conecta al MongoDB que está adentro de Docker usando localhost
 MONGO_URL = "mongodb://localhost:27017"
