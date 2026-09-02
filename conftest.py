@@ -27,6 +27,7 @@ def mock_document_repo():
 @pytest.fixture
 def mock_user_repo():
     repo = AsyncMock()
+    repo.find_by_id.return_value = None
     repo.find_by_email.return_value = None
     repo.find_all.return_value = []
     return repo
