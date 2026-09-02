@@ -1,11 +1,46 @@
 # docker-compose.yml
-# Orquestación de la API + MongoDB.
+# Orquestación local de Traefik + API + MongoDB.
 # Compila la imagen del servicio `app` con:
 #   docker build -t pdf-extactext:0.1.0 .
 # Luego levanta el stack con:
 #   docker compose up -d
 
 services:
+  # ---------------------------------------------------------------------------
+  # Traefik — proxy inverso local. Expone la API por HTTPS y enruta mediante
+  # etiquetas de Docker; los demás servicios no publican puertos HTTP.
+  # ---------------------------------------------------------------------------
+  traefik:
+    image: traefik:v3.6
+    container_name: pdf_extractext_traefik
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    command:
+      - "--api.dashboard=true"
+      - "--api.insecure=false"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+      - "--entrypoints.web.http.redirections.entrypoint.permanent=true"
+      - "--accesslog=true"
+      - "--log.level=INFO"
+    ports:
+      # Se enlazan solo a loopback: esta configuración es para desarrollo local.
+      - "127.0.0.1:80:80"
+      - "127.0.0.1:443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.traefik-dashboard.rule=Host(`${TRAEFIK_DASHBOARD_HOST:-traefik.universidad.localhost}`)"
+      - "traefik.http.routers.traefik-dashboard.entrypoints=websecure"
+      - "traefik.http.routers.traefik-dashboard.tls=true"
+      - "traefik.http.routers.traefik-dashboard.service=api@internal"
+
   # ---------------------------------------------------------------------------
   # MongoDB — base de datos de documentos.
   # ---------------------------------------------------------------------------
@@ -34,8 +69,6 @@ services:
     depends_on:
       basededatos:
         condition: service_healthy
-    ports:
-      - "8000:8000"
     env_file:
       - .env
     environment:
@@ -46,3 +79,9 @@ services:
     # Issue #21 — No definimos `command:`: el CMD del Dockerfile ya apunta
     # correctamente a app.main:app, evitando duplicación y posibles errores
     # de módulo.
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.pdf-extractext.rule=Host(`${TRAEFIK_APP_HOST:-pdf-extactext.universidad.localhost}`)"
+      - "traefik.http.routers.pdf-extractext.entrypoints=websecure"
+      - "traefik.http.routers.pdf-extractext.tls=true"
+      - "traefik.http.services.pdf-extractext.loadbalancer.server.port=8000"

@@ -50,7 +50,8 @@ ls -lh pdf-extactext-0.1.0.tar
 docker save \
   -o stack-offline.tar \
   pdf-extactext:0.1.0 \
-  mongo:7
+  mongo:7 \
+  traefik:v3.6
 ```
 
 ### Ejemplo 3 — Salida por stdout + compresión en una sola línea
@@ -96,13 +97,10 @@ gunzip -c pdf-extactext-0.1.0.tar.gz | docker load
 ### Ejemplo 3 — Levantar el stack con la imagen recién cargada
 
 ```bash
-# 1) Cargar la API
-docker load -i pdf-extactext-0.1.0.tar
-
-# 2) Cargar MongoDB (si nunca se descargó)
+# 1) Cargar la API y las imágenes de infraestructura (MongoDB y Traefik)
 docker load -i stack-offline.tar
 
-# 3) Levantar el stack del proyecto (docker-compose.yml usa image: pdf-extactext:0.1.0)
+# 2) Levantar el stack del proyecto (docker-compose.yml usa image: pdf-extactext:0.1.0)
 docker compose up -d
 ```
 
@@ -111,26 +109,27 @@ docker compose up -d
 ## Flujo completo: de una PC a otra
 
 ```text
-[ PC A ]                          [ PC B ]
-docker build -t app:0.1.0 .       docker load -i app-0.1.0.tar
-docker save -o app-0.1.0.tar app:0.1.0   docker images
-docker images                     docker compose up -d
-   |                                        ^
-   +----- scp / pendrive ------------------+
+[ PC A ]                                          [ PC B ]
+docker build -t app:0.1.0 .                       docker load -i stack-offline.tar
+docker save -o stack-offline.tar app mongo traefik docker compose up -d
+   |                                                        ^
+   +------------- scp / pendrive -------------------------+
 ```
 
 ```bash
 # En PC A (con internet)
 docker build -t pdf-extactext:0.1.0 .
-docker save -o pdf-extactext-0.1.0.tar pdf-extactext:0.1.0
-gzip pdf-extactext-0.1.0.tar        # opcional pero recomendado
+docker pull mongo:7
+docker pull traefik:v3.6
+docker save -o stack-offline.tar pdf-extactext:0.1.0 mongo:7 traefik:v3.6
+gzip stack-offline.tar        # opcional pero recomendado
 
 # Transferir el archivo a la PC B (sin internet)
-scp pdf-extactext-0.1.0.tar.gz user@srv-prod:/opt/images/
+scp stack-offline.tar.gz user@srv-prod:/opt/images/
 
 # En PC B (air-gapped)
-gunzip pdf-extactext-0.1.0.tar.gz
-docker load -i pdf-extactext-0.1.0.tar
+gunzip stack-offline.tar.gz
+docker load -i stack-offline.tar
 docker compose up -d                 # el compose usa image: pdf-extactext:0.1.0
 ```
 

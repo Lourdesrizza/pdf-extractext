@@ -217,6 +217,11 @@ cp .env.example .env
 
 ### Paso 5 — Levantar el proyecto con Docker (recomendado)
 
+El stack incluye Traefik como proxy inverso local. La API queda disponible en
+`https://pdf-extactext.universidad.localhost` y el panel de Traefik en
+`https://traefik.universidad.localhost`. Consultá [TRAEFIK.md](TRAEFIK.md)
+para instalar Docker Desktop, iniciar el stack y verificarlo.
+
 Hay dos modos de uso:
 
 #### A) Solo MongoDB en Docker + API local
@@ -253,7 +258,7 @@ docker compose up -d
 docker compose logs -f app
 
 # 4. Verificar salud
-curl http://localhost:8000/health
+curl -k https://pdf-extactext.universidad.localhost/health
 
 # 5. Detener
 docker compose down
