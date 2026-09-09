@@ -4,6 +4,7 @@ from fastapi import Depends
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.application.services.user_service import UserService
+from app.application.services.document_service import DocumentService
 from app.domain.repositories.user_repository import UserRepository
 from app.domain.repositories.document_repository import DocumentRepository
 from app.infrastructure.database.connection import get_database_session
@@ -53,3 +54,10 @@ async def get_document_repository(
         Instancia de MongoDocumentRepository.
     """
     return MongoDocumentRepository(database)
+
+
+async def get_document_service(
+    document_repository: DocumentRepository = Depends(get_document_repository),
+) -> DocumentService:
+    """Provee el caso de uso de subida con el repositorio configurado."""
+    return DocumentService(document_repository)

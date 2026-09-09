@@ -1,18 +1,18 @@
-import io
 import logging
 from typing import List
 
 from fastapi import APIRouter, Depends, File, HTTPException, Path, UploadFile, status
 from pymongo.errors import PyMongoError, ServerSelectionTimeoutError
 
-from app.api.dependencies import get_document_repository
+from app.api.dependencies import get_document_repository, get_document_service
+from app.application.services.document_service import DocumentService
+from app.core.exceptions import ValidationException
 from app.domain.entities.document import Document as DomainDocument
 from app.domain.repositories.document_repository import DocumentRepository
 from app.infrastructure.database.schemas.document_schema import (
     DocumentResponse,
     DocumentUpdate,
 )
-from app.services.pdf_service import PDFService
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -44,44 +44,30 @@ def _to_response(document: DomainDocument) -> DocumentResponse:
 # --- Endpoints de subida de documentos ---
 
 
-@router.post("/upload")
-async def upload_pdf(file: UploadFile = File(...)):
-    """Endpoint para subir y procesar un archivo PDF.
-
-    Procesa el archivo completamente en memoria con ``io.BytesIO``;
-    no persiste archivos temporales en disco (Issue #23).
-
-    Args:
-        file: Archivo PDF recibido como UploadFile.
-
-    Returns:
-        JSON con el nombre del archivo, checksum y texto extraído.
-    """
-    if not file.filename or not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="El archivo debe ser un PDF")
-
+@router.post(
+    "/upload",
+    response_model=DocumentResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def upload_pdf(
+    file: UploadFile = File(...),
+    document_service: DocumentService = Depends(get_document_service),
+) -> DocumentResponse:
+    """Lee el PDF en memoria y devuelve los datos del documento persistido."""
     content = await file.read()
-    buffer = io.BytesIO(content)
-
     try:
-        PDFService.validate_pdf_content(buffer.getvalue())
-    except ValueError as error:
-        raise HTTPException(status_code=400, detail=str(error))
-
-    checksum = PDFService.get_checksum(buffer.getvalue())
-    text = PDFService.extract_text(buffer.getvalue())
-
-    if not text:
+        document = await document_service.upload_pdf(file.filename or "", content)
+    except ValidationException as error:
         raise HTTPException(
-            status_code=400, detail="El PDF no contiene texto extraíble"
-        )
-
-    return {
-        "filename": file.filename,
-        "checksum": checksum,
-        "extracted_text_preview": text[:100] + "...",
-        "message": "Texto extraído correctamente",
-    }
+            status_code=status.HTTP_400_BAD_REQUEST, detail=error.message
+        ) from error
+    except PyMongoError as error:
+        logger.error("Error de MongoDB al persistir documento: %s", error)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Base de datos no disponible",
+        ) from error
+    return _to_response(document)
 
 
 # --- Endpoints CRUD de documentos ---
