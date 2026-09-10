@@ -92,6 +92,8 @@ class MongoDocumentRepository(DocumentRepository):
         try:
             result = await self._collection.insert_one(db_document)
         except DuplicateKeyError as error:
+            if (error.details or {}).get("keyPattern") != {"checksum": 1}:
+                raise
             raise DocumentAlreadyExistsError("El documento ya existe") from error
         document_in_db.id = str(result.inserted_id)
 

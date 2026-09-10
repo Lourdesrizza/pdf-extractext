@@ -10,20 +10,57 @@ from app.infrastructure.repositories.mongo_document_repository import MongoDocum
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("failure_type", [DuplicateKeyError, PyMongoError, ValueError])
-async def test_repository_translates_only_duplicate_key(failure_type):
+@pytest.mark.parametrize("failure_type", [PyMongoError, ValueError])
+async def test_repository_preserves_other_errors(failure_type):
     database = MagicMock()
     failure = failure_type("informacion interna")
     database.documents.insert_one = AsyncMock(side_effect=failure)
     repository = MongoDocumentRepository(database)
-    expected = DocumentAlreadyExistsError if failure_type is DuplicateKeyError else failure_type
-    with pytest.raises(expected) as error:
+    with pytest.raises(failure_type) as error:
         await repository.create(Document(filename="test.pdf", checksum="a" * 64, extracted_text="Texto"))
     database.documents.insert_one.assert_awaited_once()
-    if failure_type is DuplicateKeyError:
-        assert error.value.message == "El documento ya existe"
-    else:
-        assert error.value is failure
+    assert error.value is failure
+
+
+@pytest.mark.asyncio
+async def test_repository_translates_checksum_duplicate_key():
+    database = MagicMock()
+    failure = DuplicateKeyError(
+        "informacion interna", 11000, {"keyPattern": {"checksum": 1}}
+    )
+    database.documents.insert_one = AsyncMock(side_effect=failure)
+    with pytest.raises(DocumentAlreadyExistsError) as error:
+        await MongoDocumentRepository(database).create(
+            Document(filename="test.pdf", checksum="a" * 64, extracted_text="Texto")
+        )
+    assert error.value.message == "El documento ya existe"
+    assert error.value.__cause__ is failure
+    database.documents.insert_one.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "details",
+    [
+        {"keyPattern": {"filename": 1}},
+        {"keyPattern": {"_id": 1}},
+        {"keyPattern": {"checksum": 1, "filename": 1}},
+        None,
+        {},
+        {"errmsg": "index: uq_documents_checksum dup key"},
+    ],
+    ids=["other-field", "id", "compound", "missing", "empty", "message-only"],
+)
+async def test_repository_preserves_unconfirmed_duplicate_key(details):
+    database = MagicMock()
+    failure = DuplicateKeyError("uq_documents_checksum", 11000, details)
+    database.documents.insert_one = AsyncMock(side_effect=failure)
+    with pytest.raises(DuplicateKeyError) as error:
+        await MongoDocumentRepository(database).create(
+            Document(filename="test.pdf", checksum="a" * 64, extracted_text="Texto")
+        )
+    assert error.value is failure
+    database.documents.insert_one.assert_awaited_once()
 
 
 @pytest.mark.asyncio
