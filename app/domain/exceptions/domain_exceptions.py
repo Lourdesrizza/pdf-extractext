@@ -1,6 +1,9 @@
+from app.core.exceptions import DomainException
+
+
 class DocumentNotFoundError(Exception):
     pass
 
-class DocumentAlreadyExistsError(Exception):
+class DocumentAlreadyExistsError(DomainException):
     pass
 #crea excepciones personalizadas en pythonn

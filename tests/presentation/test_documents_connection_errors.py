@@ -47,4 +47,20 @@ def test_upload_persistence_errors_return_problem(
     assert response.json()["status"] == expected_status
     assert response.json()["detail"] == detail
     mock_document_repo.create.assert_awaited_once()
-    mock_document_repo.find_by_checksum.assert_not_called()
+    mock_document_repo.find_by_checksum.assert_awaited_once()
+
+
+def test_upload_lookup_error_returns_503_without_creation(client, mock_document_repo):
+    with fitz.open() as pdf:
+        page = pdf.new_page()
+        page.insert_text((50, 50), "Texto")
+        content = pdf.tobytes()
+    mock_document_repo.find_by_checksum.side_effect = PyMongoError("dato interno")
+    response = client.post(
+        "/api/v1/upload", files={"file": ("test.pdf", content, "application/pdf")}
+    )
+    assert response.status_code == 503
+    assert response.headers["content-type"].startswith("application/problem+json")
+    assert response.json()["detail"] == "Base de datos no disponible"
+    assert "dato interno" not in response.text
+    mock_document_repo.create.assert_not_called()
