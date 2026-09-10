@@ -42,7 +42,7 @@ def test_upload_pdf(client, mock_document_repo):
     assert submitted.filename == persisted.filename
     assert submitted.checksum == persisted.checksum
     assert submitted.extracted_text == text
-    mock_document_repo.find_by_checksum.assert_not_called()
+    mock_document_repo.find_by_checksum.assert_awaited_once_with(persisted.checksum)
 
 def test_upload_filename_over_255_characters_returns_400(client, mock_document_repo):
     with fitz.open() as pdf:
@@ -140,4 +140,37 @@ def test_upload_rejected_content_returns_problem_without_persisting(client, mock
         if kind == "signature" else "El PDF no contiene texto extraíble"
     )
     mock_document_repo.create.assert_not_called()
-    mock_document_repo.find_by_checksum.assert_not_called()
+    if kind == "signature":
+        mock_document_repo.find_by_checksum.assert_not_called()
+    else:
+        mock_document_repo.find_by_checksum.assert_awaited_once_with(hashlib.sha256(content).hexdigest())
+
+
+@pytest.mark.parametrize("race", [False, True], ids=["existing", "concurrent-insert"])
+def test_duplicate_upload_returns_global_conflict(client, mock_document_repo, race):
+    from app.domain.exceptions.domain_exceptions import DocumentAlreadyExistsError
+
+    with fitz.open() as pdf:
+        page = pdf.new_page()
+        page.insert_text((50, 50), "Texto duplicado")
+        content = pdf.tobytes()
+    if race:
+        mock_document_repo.create.side_effect = DocumentAlreadyExistsError("dato interno")
+    else:
+        mock_document_repo.find_by_checksum.return_value = Document(filename="original.pdf")
+    response = client.post(
+        "/api/v1/upload", files={"file": ("renombrado.pdf", content, "application/pdf")}
+    )
+    assert response.status_code == 409
+    assert response.headers["content-type"].startswith("application/problem+json")
+    payload = response.json()
+    assert payload["status"] == 409
+    assert payload["title"] == "Conflict"
+    assert payload["type"] == "https://pdf-extactext.local/errors/document-already-exists"
+    assert payload["detail"] == "El documento ya existe"
+    assert "dato interno" not in response.text
+    mock_document_repo.find_by_checksum.assert_awaited_once_with(hashlib.sha256(content).hexdigest())
+    if race:
+        mock_document_repo.create.assert_awaited_once()
+    else:
+        mock_document_repo.create.assert_not_called()

@@ -5,8 +5,10 @@ from typing import List, Optional
 from bson import ObjectId
 from bson.errors import InvalidId
 from motor.motor_asyncio import AsyncIOMotorDatabase
+from pymongo.errors import DuplicateKeyError
 
 from app.domain.entities.document import Document
+from app.domain.exceptions.domain_exceptions import DocumentAlreadyExistsError
 from app.domain.repositories.document_repository import DocumentRepository
 from app.infrastructure.database.schemas.document_schema import (
     DocumentCreate,
@@ -87,7 +89,12 @@ class MongoDocumentRepository(DocumentRepository):
         document_in_db = DocumentInDB(**document_create.model_dump())
         db_document = document_in_db.model_dump(by_alias=True, exclude={"id"})
 
-        result = await self._collection.insert_one(db_document)
+        try:
+            result = await self._collection.insert_one(db_document)
+        except DuplicateKeyError as error:
+            if (error.details or {}).get("keyPattern") != {"checksum": 1}:
+                raise
+            raise DocumentAlreadyExistsError("El documento ya existe") from error
         document_in_db.id = str(result.inserted_id)
 
         return self._to_entity(document_in_db)

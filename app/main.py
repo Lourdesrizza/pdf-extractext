@@ -17,6 +17,7 @@ from app.api.v1.user_routes import router as user_router
 from app.api.v1.pdf_router import router as pdf_router
 from app.core.config import settings
 from app.core.exceptions import DomainException
+from app.infrastructure.database.connection import database_lifespan
 
 # 1. Creamos una única app, y le apagamos el docs por defecto para usar el tuyo
 app = FastAPI(
@@ -24,6 +25,7 @@ app = FastAPI(
     version="1.0.0",
     debug=settings.DEBUG,
     docs_url=None,
+    lifespan=database_lifespan,
 )
 
 app.add_exception_handler(DomainException, domain_exception_handler)

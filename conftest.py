@@ -14,6 +14,7 @@ from unittest.mock import AsyncMock, MagicMock
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.infrastructure.database import connection
 from app.api.dependencies import get_document_repository, get_user_repository
 
 @pytest.fixture
@@ -33,8 +34,17 @@ def mock_user_repo():
     return repo
 
 @pytest.fixture
-def client(mock_document_repo, mock_user_repo):
+def client(mock_document_repo, mock_user_repo, monkeypatch):
     """TestClient con MongoDB mockeado — no necesita Docker."""
+    database = MagicMock()
+    database.command = AsyncMock(return_value={"ok": 1})
+    database.documents.create_index = AsyncMock()
+    database.documents.index_information = AsyncMock(return_value={
+        "uq_documents_checksum": {"key": [("checksum", 1)], "unique": True}
+    })
+    mongo_client = MagicMock()
+    mongo_client.__getitem__.return_value = database
+    monkeypatch.setattr(connection, "get_client", lambda: mongo_client)
     app.dependency_overrides[get_document_repository] = lambda: mock_document_repo
     app.dependency_overrides[get_user_repository] = lambda: mock_user_repo
     with TestClient(app) as c:

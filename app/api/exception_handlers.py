@@ -13,6 +13,7 @@ from pymongo.errors import ServerSelectionTimeoutError
 
 from app.api.problem_json import ProblemDetail, build_problem
 from app.core.exceptions import DomainException, NotFoundException, ValidationException
+from app.domain.exceptions.domain_exceptions import DocumentAlreadyExistsError
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +32,16 @@ def _problem_response(problem: ProblemDetail) -> JSONResponse:
 def domain_exception_handler(request: Request, exception: DomainException) -> JSONResponse:
     """Maneja excepciones del dominio (4xx)."""
     status_code = _domain_status(exception)
+    if isinstance(exception, DocumentAlreadyExistsError):
+        return _problem_response(
+            build_problem(
+                type_="https://pdf-extactext.local/errors/document-already-exists",
+                title="Conflict",
+                status=status_code,
+                detail="El documento ya existe",
+                instance=str(request.url),
+            )
+        )
     detail = getattr(exception, "field", None) or exception.message
     return _problem_response(
         build_problem(
@@ -107,6 +118,8 @@ def http_exception_handler(request: Request, exception: HTTPException) -> JSONRe
 
 def _domain_status(exception: DomainException) -> int:
     """Mapea subtipos de DomainException a un código HTTP adecuado."""
+    if isinstance(exception, DocumentAlreadyExistsError):
+        return 409
     if isinstance(exception, NotFoundException):
         return 404
     if isinstance(exception, ValidationException):
