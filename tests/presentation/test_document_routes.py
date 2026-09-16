@@ -50,6 +50,16 @@ def test_get_document_by_checksum_returns_document(client, mock_document_repo):
     assert response.json()["id"] == document.id
 
 
+def test_get_document_by_checksum_returns_problem_when_not_found(client):
+    checksum = "missing-checksum"
+
+    response = client.get(f"/api/v1/documents/checksum/{checksum}")
+
+    assert response.status_code == 404
+    assert response.headers["content-type"].startswith("application/problem+json")
+    assert response.json()["detail"] == f"Documento con checksum '{checksum}' no encontrado"
+
+
 def test_update_document_updates_filename(client, mock_document_repo):
     document = _document()
     mock_document_repo.find_by_id.return_value = document
@@ -64,6 +74,18 @@ def test_update_document_updates_filename(client, mock_document_repo):
     mock_document_repo.update.assert_awaited_once_with(document)
 
 
+def test_update_document_requires_filename(client, mock_document_repo):
+    document = _document()
+    mock_document_repo.find_by_id.return_value = document
+
+    response = client.patch(f"/api/v1/documents/{document.id}", json={})
+
+    assert response.status_code == 400
+    assert response.headers["content-type"].startswith("application/problem+json")
+    assert response.json()["detail"] == "Se debe proporcionar 'filename' para actualizar"
+    mock_document_repo.update.assert_not_called()
+
+
 def test_delete_document_delegates_to_repository(client, mock_document_repo):
     document = _document()
     mock_document_repo.find_by_id.return_value = document
@@ -72,3 +94,11 @@ def test_delete_document_delegates_to_repository(client, mock_document_repo):
 
     assert response.status_code == 204
     mock_document_repo.delete.assert_awaited_once_with(document.id)
+
+
+def test_delete_document_returns_problem_when_not_found(client):
+    response = client.delete("/api/v1/documents/missing")
+
+    assert response.status_code == 404
+    assert response.headers["content-type"].startswith("application/problem+json")
+    assert response.json()["detail"] == "Documento con ID 'missing' no encontrado"

@@ -4,11 +4,11 @@ from typing import List
 from fastapi import APIRouter, Depends, Header, HTTPException, Path, Request, status
 from pymongo.errors import PyMongoError, ServerSelectionTimeoutError
 
-from app.api.dependencies import get_document_repository, get_document_service
+from app.api.dependencies import get_document_service
 from app.application.services.document_service import DocumentService
 from app.core.exceptions import ValidationException
 from app.domain.entities.document import Document as DomainDocument
-from app.domain.repositories.document_repository import DocumentRepository
+from app.domain.exceptions.domain_exceptions import DocumentNotFoundError
 from app.infrastructure.database.schemas.document_schema import (
     DocumentResponse,
     DocumentUpdate,
@@ -112,18 +112,18 @@ async def upload_pdf(
     status_code=status.HTTP_200_OK,
 )
 async def get_all_documents(
-    document_repository: DocumentRepository = Depends(get_document_repository),
+    document_service: DocumentService = Depends(get_document_service),
 ) -> List[DocumentResponse]:
     """Obtiene todos los documentos almacenados.
 
     Args:
-        document_repository: Repositorio de documentos inyectado.
+        document_service: Servicio de documentos inyectado.
 
     Returns:
         Lista de documentos.
     """
     try:
-        documents = await document_repository.find_all()
+        documents = await document_service.get_all_documents()
     except (ServerSelectionTimeoutError, PyMongoError) as error:
         logger.error("Error de conexion a MongoDB al obtener documentos: %s", error)
         raise HTTPException(
@@ -142,13 +142,13 @@ async def get_all_documents(
 async def get_document_by_id(
     document_id: str = Path(..., description="ID del documento en MongoDB"),
     *,
-    document_repository: DocumentRepository = Depends(get_document_repository),
+    document_service: DocumentService = Depends(get_document_service),
 ) -> DocumentResponse:
     """Busca un documento por su ID.
 
     Args:
         document_id: ID del documento a buscar.
-        document_repository: Repositorio de documentos inyectado.
+        document_service: Servicio de documentos inyectado.
 
     Returns:
         Documento encontrado.
@@ -156,12 +156,13 @@ async def get_document_by_id(
     Raises:
         HTTPException: Si el documento no existe.
     """
-    document = await document_repository.find_by_id(document_id)
-    if not document:
+    try:
+        document = await document_service.get_document_by_id(document_id)
+    except DocumentNotFoundError as error:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Documento con ID '{document_id}' no encontrado",
-        )
+            detail=str(error),
+        ) from error
     return _to_response(document)
 
 
@@ -173,13 +174,13 @@ async def get_document_by_id(
 async def get_document_by_checksum(
     checksum: str = Path(..., description="Hash SHA256 del contenido"),
     *,
-    document_repository: DocumentRepository = Depends(get_document_repository),
+    document_service: DocumentService = Depends(get_document_service),
 ) -> DocumentResponse:
     """Busca un documento por su checksum.
 
     Args:
         checksum: Hash SHA256 del contenido del archivo.
-        document_repository: Repositorio de documentos inyectado.
+        document_service: Servicio de documentos inyectado.
 
     Returns:
         Documento encontrado.
@@ -187,12 +188,13 @@ async def get_document_by_checksum(
     Raises:
         HTTPException: Si el documento no existe.
     """
-    document = await document_repository.find_by_checksum(checksum)
-    if not document:
+    try:
+        document = await document_service.get_document_by_checksum(checksum)
+    except DocumentNotFoundError as error:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Documento con checksum '{checksum}' no encontrado",
-        )
+            detail=str(error),
+        ) from error
     return _to_response(document)
 
 
@@ -205,14 +207,14 @@ async def update_document(
     document_update: DocumentUpdate,
     document_id: str = Path(..., description="ID del documento en MongoDB"),
     *,
-    document_repository: DocumentRepository = Depends(get_document_repository),
+    document_service: DocumentService = Depends(get_document_service),
 ) -> DocumentResponse:
     """Actualiza el nombre de un documento existente (solo filename es mutable).
 
     Args:
         document_update: Datos a actualizar del documento.
         document_id: ID del documento a actualizar.
-        document_repository: Repositorio de documentos inyectado.
+        document_service: Servicio de documentos inyectado.
 
     Returns:
         Documento actualizado.
@@ -220,21 +222,20 @@ async def update_document(
     Raises:
         HTTPException: Si el documento no existe o no se proporciona filename.
     """
-    document = await document_repository.find_by_id(document_id)
-    if not document:
+    try:
+        updated = await document_service.update_document_filename(
+            document_id, document_update.filename
+        )
+    except DocumentNotFoundError as error:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Documento con ID '{document_id}' no encontrado",
-        )
-
-    if document_update.filename is None:
+            detail=str(error),
+        ) from error
+    except ValidationException as error:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Se debe proporcionar 'filename' para actualizar",
-        )
-
-    document.update_filename(document_update.filename)
-    updated = await document_repository.update(document)
+            detail=error.message,
+        ) from error
     return _to_response(updated)
 
 
@@ -245,22 +246,21 @@ async def update_document(
 async def delete_document(
     document_id: str = Path(..., description="ID del documento en MongoDB"),
     *,
-    document_repository: DocumentRepository = Depends(get_document_repository),
+    document_service: DocumentService = Depends(get_document_service),
 ) -> None:
     """Elimina un documento por su ID.
 
     Args:
         document_id: ID del documento a eliminar.
-        document_repository: Repositorio de documentos inyectado.
+        document_service: Servicio de documentos inyectado.
 
     Raises:
         HTTPException: Si el documento no existe.
     """
-    document = await document_repository.find_by_id(document_id)
-    if not document:
+    try:
+        await document_service.delete_document(document_id)
+    except DocumentNotFoundError as error:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Documento con ID '{document_id}' no encontrado",
-        )
-
-    await document_repository.delete(document_id)
+            detail=str(error),
+        ) from error

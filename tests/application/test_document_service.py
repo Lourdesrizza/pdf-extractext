@@ -11,7 +11,10 @@ from app.application.services.document_service import DocumentService
 from app.core.exceptions import ValidationException
 from app.domain.entities.document import Document
 from app.domain.repositories.document_repository import DocumentRepository
-from app.domain.exceptions.domain_exceptions import DocumentAlreadyExistsError
+from app.domain.exceptions.domain_exceptions import (
+    DocumentAlreadyExistsError,
+    DocumentNotFoundError,
+)
 from app.services.pdf_service import PDFService
 
 
@@ -159,3 +162,131 @@ async def test_same_filename_different_contents_are_allowed_but_same_bytes_are_r
     assert first.id != second.id
     assert repository.create.await_count == 2
     assert len(stored) == 2
+
+
+@pytest.mark.asyncio
+async def test_list_documents_returns_repository_documents():
+    repository = AsyncMock(spec=DocumentRepository)
+    documents = [Document(id="1", filename="uno.pdf"), Document(id="2", filename="dos.pdf")]
+    repository.find_all.return_value = documents
+
+    result = await DocumentService(repository).get_all_documents()
+
+    assert result == documents
+    repository.find_all.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_get_document_by_id_returns_existing_document():
+    repository = AsyncMock(spec=DocumentRepository)
+    document = Document(id="document-id", filename="informe.pdf")
+    repository.find_by_id.return_value = document
+
+    result = await DocumentService(repository).get_document_by_id(document.id)
+
+    assert result is document
+    repository.find_by_id.assert_awaited_once_with(document.id)
+
+
+@pytest.mark.asyncio
+async def test_get_document_by_id_raises_when_document_does_not_exist():
+    repository = AsyncMock(spec=DocumentRepository)
+    repository.find_by_id.return_value = None
+
+    with pytest.raises(DocumentNotFoundError) as error:
+        await DocumentService(repository).get_document_by_id("missing")
+
+    assert str(error.value) == "Documento con ID 'missing' no encontrado"
+    repository.find_by_id.assert_awaited_once_with("missing")
+
+
+@pytest.mark.asyncio
+async def test_get_document_by_checksum_returns_existing_document():
+    repository = AsyncMock(spec=DocumentRepository)
+    checksum = "a" * 64
+    document = Document(id="document-id", filename="informe.pdf", checksum=checksum)
+    repository.find_by_checksum.return_value = document
+
+    result = await DocumentService(repository).get_document_by_checksum(checksum)
+
+    assert result is document
+    repository.find_by_checksum.assert_awaited_once_with(checksum)
+
+
+@pytest.mark.asyncio
+async def test_get_document_by_checksum_raises_when_document_does_not_exist():
+    repository = AsyncMock(spec=DocumentRepository)
+    checksum = "missing-checksum"
+    repository.find_by_checksum.return_value = None
+
+    with pytest.raises(DocumentNotFoundError) as error:
+        await DocumentService(repository).get_document_by_checksum(checksum)
+
+    assert str(error.value) == f"Documento con checksum '{checksum}' no encontrado"
+    repository.find_by_checksum.assert_awaited_once_with(checksum)
+
+
+@pytest.mark.asyncio
+async def test_update_document_filename_persists_existing_document():
+    repository = AsyncMock(spec=DocumentRepository)
+    document = Document(id="document-id", filename="original.pdf")
+    repository.find_by_id.return_value = document
+    repository.update.side_effect = lambda updated: updated
+
+    result = await DocumentService(repository).update_document_filename(
+        document.id, " actualizado.pdf "
+    )
+
+    assert result is document
+    assert result.filename == "actualizado.pdf"
+    repository.find_by_id.assert_awaited_once_with(document.id)
+    repository.update.assert_awaited_once_with(document)
+
+
+@pytest.mark.asyncio
+async def test_update_document_filename_raises_when_document_does_not_exist():
+    repository = AsyncMock(spec=DocumentRepository)
+    repository.find_by_id.return_value = None
+
+    with pytest.raises(DocumentNotFoundError):
+        await DocumentService(repository).update_document_filename("missing", "nuevo.pdf")
+
+    repository.find_by_id.assert_awaited_once_with("missing")
+    repository.update.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_update_document_filename_requires_a_filename():
+    repository = AsyncMock(spec=DocumentRepository)
+    repository.find_by_id.return_value = Document(id="document-id", filename="informe.pdf")
+
+    with pytest.raises(ValidationException) as error:
+        await DocumentService(repository).update_document_filename("document-id", None)
+
+    assert error.value.message == "Se debe proporcionar 'filename' para actualizar"
+    repository.find_by_id.assert_awaited_once_with("document-id")
+    repository.update.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_delete_document_removes_existing_document():
+    repository = AsyncMock(spec=DocumentRepository)
+    document = Document(id="document-id", filename="informe.pdf")
+    repository.find_by_id.return_value = document
+
+    await DocumentService(repository).delete_document(document.id)
+
+    repository.find_by_id.assert_awaited_once_with(document.id)
+    repository.delete.assert_awaited_once_with(document.id)
+
+
+@pytest.mark.asyncio
+async def test_delete_document_raises_when_document_does_not_exist():
+    repository = AsyncMock(spec=DocumentRepository)
+    repository.find_by_id.return_value = None
+
+    with pytest.raises(DocumentNotFoundError):
+        await DocumentService(repository).delete_document("missing")
+
+    repository.find_by_id.assert_awaited_once_with("missing")
+    repository.delete.assert_not_called()
