@@ -212,3 +212,8 @@ __marimo__/
 nul
 
 mongo-data/
+
+# Performance test inputs and generated reports
+tests/stress/pdfs/*.pdf
+tests/stress/results/*
+!tests/stress/results/.gitkeep

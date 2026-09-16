@@ -1,0 +1,3 @@
+POST https://pdf-extactext.universidad.localhost/extract
+Content-Type: application/pdf
+@__PDF_ABSOLUTE_PATH__
