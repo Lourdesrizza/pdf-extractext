@@ -15,6 +15,7 @@ from app.api.exception_handlers import (
 from app.api.v1.health_router import router as health_router
 from app.api.v1.user_routes import router as user_router
 from app.api.v1.pdf_router import router as pdf_router
+from app.api.v1.extraction_router import router as extraction_router
 from app.core.config import settings
 from app.core.exceptions import DomainException
 from app.infrastructure.database.connection import database_lifespan
@@ -64,5 +65,6 @@ def root():
 
 # 5. Routers de la API (siempre al final)
 app.include_router(health_router, tags=["health"])
+app.include_router(extraction_router, tags=["Extraccion"])
 app.include_router(user_router, prefix="/api/v1", tags=["users"])
 app.include_router(pdf_router, prefix="/api/v1", tags=["Documentos"])
