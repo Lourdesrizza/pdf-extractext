@@ -95,11 +95,12 @@ El proyecto aplica **Arquitectura de Aplicaciones Empresariales** en cuatro capa
 
 ```
 Cliente envía POST /api/v1/upload
-  → pdf_router.py  (valida extensión .pdf)
+  → body binario con Content-Type: application/pdf y header X-Filename
+  → pdf_router.py  (lee el body por chunks, sin multipart ni archivos temporales)
   → PDFService.validate_pdf_content()  (tamaño, firma %PDF)
   → PDFService.get_checksum()  (SHA-256)
   → PDFService.extract_text()  (PyMuPDF)
-  → Respuesta JSON con preview del texto
+  → Persistencia y respuesta JSON del documento creado
 ```
 
 ---
@@ -117,6 +118,21 @@ Cliente envía POST /api/v1/upload
 | `DELETE` | `/api/v1/documents/{id}` | Elimina un documento |
 | `POST` | `/api/v1/users/` | Crea un usuario |
 | `GET` | `/api/v1/users/{id}` | Obtiene usuario por ID |
+
+### Subir un PDF
+
+`POST /api/v1/upload` recibe el archivo como body HTTP binario, no como
+`multipart/form-data`. Debe incluir `Content-Type: application/pdf` y el
+header `X-Filename` con el nombre original. El body se lee por chunks y se
+rechaza con `413 Payload Too Large` al superar 5 MB, sin usar archivos
+temporales.
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/v1/upload \
+  -H "Content-Type: application/pdf" \
+  -H "X-Filename: informe.pdf" \
+  --data-binary "@informe.pdf"
+```
 
 ### Health check (`/health`)
 

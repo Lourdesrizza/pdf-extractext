@@ -39,7 +39,12 @@ def test_upload_persistence_errors_return_problem(
     # Inspeccionamos la respuesta 500 en vez de relanzar la excepción del servidor.
     with TestClient(client.app, raise_server_exceptions=False) as error_client:
         response = error_client.post(
-            "/api/v1/upload", files={"file": ("test.pdf", content, "application/pdf")}
+            "/api/v1/upload",
+            content=content,
+            headers={
+                "content-type": "application/pdf",
+                "x-filename": "test.pdf",
+            },
         )
 
     assert response.status_code == expected_status
@@ -57,7 +62,12 @@ def test_upload_lookup_error_returns_503_without_creation(client, mock_document_
         content = pdf.tobytes()
     mock_document_repo.find_by_checksum.side_effect = PyMongoError("dato interno")
     response = client.post(
-        "/api/v1/upload", files={"file": ("test.pdf", content, "application/pdf")}
+        "/api/v1/upload",
+        content=content,
+        headers={
+            "content-type": "application/pdf",
+            "x-filename": "test.pdf",
+        },
     )
     assert response.status_code == 503
     assert response.headers["content-type"].startswith("application/problem+json")

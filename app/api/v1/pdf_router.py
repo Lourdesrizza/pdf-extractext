@@ -1,7 +1,7 @@
 import logging
 from typing import List
 
-from fastapi import APIRouter, Depends, File, HTTPException, Path, UploadFile, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Path, Request, status
 from pymongo.errors import PyMongoError, ServerSelectionTimeoutError
 
 from app.api.dependencies import get_document_repository, get_document_service
@@ -13,9 +13,34 @@ from app.infrastructure.database.schemas.document_schema import (
     DocumentResponse,
     DocumentUpdate,
 )
+from app.services.pdf_service import PDFService
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+async def _read_pdf_body(request: Request) -> bytes:
+    """Lee el body por chunks y rechaza el exceso antes de acumularlo.
+
+    ``Request.stream()`` expone los eventos ASGI directamente: a diferencia del
+    parser multipart, no crea archivos spooled ni temporales.
+    """
+    content_length = request.headers.get("content-length")
+    if content_length and int(content_length) > PDFService.MAX_FILE_SIZE_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            detail="El archivo no puede superar los 5MB",
+        )
+
+    content = bytearray()
+    async for chunk in request.stream():
+        if len(content) + len(chunk) > PDFService.MAX_FILE_SIZE_BYTES:
+            raise HTTPException(
+                status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+                detail="El archivo no puede superar los 5MB",
+            )
+        content.extend(chunk)
+    return bytes(content)
 
 
 def _to_response(document: DomainDocument) -> DocumentResponse:
@@ -50,13 +75,21 @@ def _to_response(document: DomainDocument) -> DocumentResponse:
     status_code=status.HTTP_201_CREATED,
 )
 async def upload_pdf(
-    file: UploadFile = File(...),
+    request: Request,
+    filename: str | None = Header(default=None, alias="X-Filename"),
     document_service: DocumentService = Depends(get_document_service),
 ) -> DocumentResponse:
-    """Lee el PDF en memoria y devuelve los datos del documento persistido."""
-    content = await file.read()
+    """Procesa un PDF recibido como body binario, sin archivos temporales."""
+    media_type = request.headers.get("content-type", "").split(";", 1)[0].lower()
+    if media_type != "application/pdf":
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="El Content-Type debe ser application/pdf",
+        )
+
+    content = await _read_pdf_body(request)
     try:
-        document = await document_service.upload_pdf(file.filename or "", content)
+        document = await document_service.upload_pdf(filename or "", content)
     except ValidationException as error:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=error.message

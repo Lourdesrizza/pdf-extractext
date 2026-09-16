@@ -134,6 +134,7 @@ HTTP_STATUSES = {
     404: "Not Found",
     405: "Method Not Allowed",
     409: "Conflict",
+    413: "Payload Too Large",
     415: "Unsupported Media Type",
     422: "Unprocessable Entity",
     429: "Too Many Requests",
