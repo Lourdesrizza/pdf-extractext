@@ -9,6 +9,7 @@ export const extractDuration = new Trend('pdf_extract_duration', true);
 export const successfulResponses = new Counter('pdf_extract_status_200');
 
 export const options = {
+  hosts: { 'pdf-extactext.universidad.localhost': '127.0.0.1' },
   insecureSkipTLSVerify: true,
   stages: [
     { duration: '10s', target: 100 },
