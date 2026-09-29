@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, HTTPException
 from fastapi.exceptions import RequestValidationError
 from fastapi.openapi.docs import get_swagger_ui_html
@@ -19,6 +21,24 @@ from app.api.v1.extraction_router import router as extraction_router
 from app.core.config import settings
 from app.core.exceptions import DomainException
 from app.infrastructure.database.connection import database_lifespan
+from app.services.parallel_pdf_extractor import ParallelPDFExtractor
+
+
+@asynccontextmanager
+async def application_lifespan(app: FastAPI):
+    async with database_lifespan(app):
+        extractor = ParallelPDFExtractor()
+        await extractor.start()
+        previous_extractor = getattr(app.state, "pdf_extractor", None)
+        app.state.pdf_extractor = extractor
+        try:
+            yield
+        finally:
+            await extractor.close()
+            if previous_extractor is None:
+                del app.state.pdf_extractor
+            else:
+                app.state.pdf_extractor = previous_extractor
 
 # 1. Creamos una única app, y le apagamos el docs por defecto para usar el tuyo
 app = FastAPI(
@@ -26,7 +46,7 @@ app = FastAPI(
     version="1.0.0",
     debug=settings.DEBUG,
     docs_url=None,
-    lifespan=database_lifespan,
+    lifespan=application_lifespan,
 )
 
 app.add_exception_handler(DomainException, domain_exception_handler)

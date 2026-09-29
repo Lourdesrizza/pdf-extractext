@@ -16,6 +16,7 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app.infrastructure.database import connection
 from app.api.dependencies import get_document_repository, get_user_repository
+from app.services.parallel_pdf_extractor import ParallelPDFExtractor
 
 @pytest.fixture
 def mock_document_repo():
@@ -36,6 +37,8 @@ def mock_user_repo():
 @pytest.fixture
 def client(mock_document_repo, mock_user_repo, monkeypatch):
     """TestClient con MongoDB mockeado — no necesita Docker."""
+    # El pool real tiene pruebas propias; las pruebas HTTP usan la ruta secuencial.
+    monkeypatch.setattr(ParallelPDFExtractor, "start", AsyncMock())
     database = MagicMock()
     database.command = AsyncMock(return_value={"ok": 1})
     database.documents.create_index = AsyncMock()

@@ -29,3 +29,22 @@ def test_validate_pdf_content_rejects_invalid_content(
 ) -> None:
     with pytest.raises(ValueError, match=message):
         PDFService.validate_pdf_content(content)
+
+
+def test_validate_pdf_content_accepts_larger_explicit_limit() -> None:
+    content = b"%PDF-" + b"0" * (17 * 1024 * 1024)
+
+    PDFService.validate_pdf_content(
+        content,
+        max_file_size_bytes=20 * 1024 * 1024,
+    )
+
+
+def test_validate_pdf_content_rejects_content_over_explicit_limit() -> None:
+    content = b"%PDF-" + b"0" * (20 * 1024 * 1024)
+
+    with pytest.raises(ValueError, match="20MB"):
+        PDFService.validate_pdf_content(
+            content,
+            max_file_size_bytes=20 * 1024 * 1024,
+        )
